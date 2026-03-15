@@ -12,3 +12,20 @@ export interface CaseAgentInput {
   caseName?: string;
   scenario?: string;
 }
+
+export interface ProsecutorInput {
+  caseBriefing: CaseBriefing;
+  message?: string;
+}
+
+export interface DefendantInput {
+  caseBriefing: CaseBriefing;
+  prosecutionArgument?: string;
+  message?: string;
+}
+
+export interface AgentTurnOutput {
+  turnNumber: number;
+  response: string;
+  toolCalls?: Array<{ name: string; args: unknown }>;
+}

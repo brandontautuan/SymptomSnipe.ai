@@ -1,19 +1,36 @@
 /**
- * CaseSnipe.ai - Nebius LLM for Case Agent
- * Uses Nebius Token Factory (OpenAI-compatible API)
- * Model: Meta-Llama-3.1-70B-Instruct
+ * CaseSnipe.ai - LLM for Case, Prosecutor, and Defendant agents
+ * Supports Nebius Token Factory or OpenRouter (fallback when Nebius returns 400)
  */
 
 import { ChatOpenAI } from "@langchain/openai";
 import { getConfig } from "@/lib/config";
 
-const NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1";
-const DEFAULT_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct";
+const NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1/";
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const NEBIUS_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct-fast";
+const OPENROUTER_MODEL = "meta-llama/llama-3.1-8b-instruct";
+
+function useOpenRouter(): boolean {
+  return process.env.LLM_PROVIDER === "openrouter";
+}
 
 export function createCaseAgentLLM() {
-  const { nebiusApiKey } = getConfig();
+  const { nebiusApiKey, openRouterApiKey } = getConfig();
+
+  if (useOpenRouter()) {
+    return new ChatOpenAI({
+      model: OPENROUTER_MODEL,
+      configuration: {
+        baseURL: OPENROUTER_BASE_URL,
+        apiKey: openRouterApiKey,
+      },
+      temperature: 0.3,
+    });
+  }
+
   return new ChatOpenAI({
-    modelName: DEFAULT_MODEL,
+    model: NEBIUS_MODEL,
     configuration: {
       baseURL: NEBIUS_BASE_URL,
       apiKey: nebiusApiKey,
