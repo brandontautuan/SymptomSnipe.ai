@@ -87,10 +87,14 @@ function parseAgentMessages(
         });
       }
 
-      // Text content from the AI
-      const text = typeof aiMsg.content === "string" ? aiMsg.content : "";
-      if (text.trim()) {
-        events.push({ type: "argument", side, round, content: text.trim(), timestamp: now() });
+      // Text content from the AI — strip any leading role labels the agent may have echoed
+      const rawText = typeof aiMsg.content === "string" ? aiMsg.content : "";
+      const text = rawText
+        .replace(/^\s*\[?(PROSECUTION|DEFENSE|JUDGE|CALLOWAY|VALE|OSEI)\]?\s*ROUND\s*\d+[:\]]\s*/i, "")
+        .replace(/^\s*(PROSECUTION|DEFENSE|JUDGE|CALLOWAY|VALE|OSEI)\s*[:—]\s*/i, "")
+        .trim();
+      if (text) {
+        events.push({ type: "argument", side, round, content: text, timestamp: now() });
       }
     } else if (msg._getType() === "tool") {
       const output = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
@@ -201,7 +205,7 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
 
     for (const e of pEvents) { transcript.push(e); onEvent(e); }
     prosecutionSummaries.push(pSummary);
-    sharedHistory.push(new AIMessage(`[PROSECUTION ROUND ${round}]: ${pSummary}`));
+    sharedHistory.push(new AIMessage(pSummary));
 
     // ── Defense turn ──
     emit({ type: "turn_start", side: "defense", round, content: `Defense begins round ${round}` });
@@ -224,7 +228,7 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
 
     for (const e of dEvents) { transcript.push(e); onEvent(e); }
     defenseSummaries.push(dSummary);
-    sharedHistory.push(new AIMessage(`[DEFENSE ROUND ${round}]: ${dSummary}`));
+    sharedHistory.push(new AIMessage(dSummary));
   }
 
   // ── Judge verdict ────────────────────────────────────────────────────────

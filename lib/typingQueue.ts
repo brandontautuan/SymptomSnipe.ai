@@ -7,6 +7,7 @@ type Listener = () => void;
 
 let queue: string[] = [];          // IDs waiting to type
 let activeId: string | null = null; // ID currently typing
+let paused = false;                 // Global pause flag
 const doneIds = new Set<string>();  // IDs that have finished
 const listeners = new Set<Listener>();
 
@@ -44,9 +45,38 @@ export function subscribe(fn: Listener) {
   return () => listeners.delete(fn);
 }
 
+export function pause() {
+  if (paused) return;
+  paused = true;
+  notify();
+}
+
+export function resume() {
+  if (!paused) return;
+  paused = false;
+  notify();
+}
+
+export function getPaused() {
+  return paused;
+}
+
+// Move an id to the front of the waiting queue so it types next (after current active)
+export function prioritize(id: string) {
+  if (activeId === id || doneIds.has(id)) return;
+  if (activeId === null) {
+    activeId = id;
+  } else {
+    queue = queue.filter((q) => q !== id);
+    queue.unshift(id);
+  }
+  notify();
+}
+
 export function resetQueue() {
   queue = [];
   activeId = null;
+  paused = false;
   doneIds.clear();
   notify();
 }

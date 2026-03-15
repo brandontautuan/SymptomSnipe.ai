@@ -3,6 +3,7 @@
 import { useState } from "react";
 import AgentPanel from "./AgentPanel";
 import type { AgentStatus, Message } from "./AgentPanel";
+import type { EvidenceItem } from "@/lib/cases";
 
 export interface TrialEvent {
   id:          string;
@@ -13,13 +14,14 @@ export interface TrialEvent {
 }
 
 interface JudgePanelProps {
-  status?:    AgentStatus;
-  model?:     string;
-  messages?:  Message[];
-  events?:    TrialEvent[];
-  round?:     number;
-  maxRounds?: number;
-  verdict?:   string;
+  status?:       AgentStatus;
+  model?:        string;
+  messages?:     Message[];
+  events?:       TrialEvent[];
+  caseEvidence?: EvidenceItem[];
+  round?:        number;
+  maxRounds?:    number;
+  verdict?:      string;
 }
 
 const EVENT_ICONS: Record<TrialEvent["type"], string> = {
@@ -54,17 +56,36 @@ const TAB_FILTER: Record<TabId, TrialEvent["type"][]> = {
   objections: ["objection"],
 };
 
+const FAVORS_LABEL: Record<EvidenceItem["favorsSide"], string> = {
+  prosecution: "PROS",
+  defense:     "DEF",
+  neutral:     "NEUTRAL",
+};
+const FAVORS_COLOR: Record<EvidenceItem["favorsSide"], string> = {
+  prosecution: "text-[#c0392b]/70 border-[#c0392b]/30",
+  defense:     "text-[#1a6fa8]/80 border-[#1a6fa8]/30",
+  neutral:     "text-slate-500 border-slate-700/40",
+};
+
 export default function JudgePanel({
-  status    = "idle",
-  model     = "—",
-  messages  = [],
-  events    = [],
-  round     = 1,
-  maxRounds = 3,
-  verdict   = "",
+  status       = "idle",
+  model        = "—",
+  messages     = [],
+  events       = [],
+  caseEvidence = [],
+  round        = 1,
+  maxRounds    = 3,
+  verdict      = "",
 }: JudgePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const filteredEvents = events.filter((e) => TAB_FILTER[activeTab].includes(e.type));
+
+  // Which evidence items have been admitted (mentioned in trial events)
+  const admittedNames = new Set(
+    events
+      .filter((e) => e.type === "evidence_admitted")
+      .map((e) => e.description.toLowerCase())
+  );
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -137,7 +158,10 @@ export default function JudgePanel({
                 }`}
               >
                 {tab.label}
-                {tab.id !== "all" && (
+                {tab.id === "evidence" && (
+                  <span className="ml-1 opacity-60">({caseEvidence.length})</span>
+                )}
+                {(tab.id === "motions" || tab.id === "objections") && (
                   <span className="ml-1 opacity-60">
                     ({events.filter((e) => TAB_FILTER[tab.id].includes(e.type)).length})
                   </span>
@@ -147,33 +171,75 @@ export default function JudgePanel({
           </div>
         </div>
 
-        {/* Event list */}
+        {/* Content */}
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
-          {filteredEvents.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-[10px] text-slate-700 italic tracking-wider">
-                {events.length === 0 ? "No events recorded" : "No entries in this category"}
-              </p>
-            </div>
-          ) : (
-            filteredEvents.map((event) => (
-              <div key={event.id} className="flex items-start gap-2">
-                <span className="text-xs mt-0.5 shrink-0">{EVENT_ICONS[event.type]}</span>
-                <div className="flex-1 min-w-0">
-                  <span className={`text-[10px] leading-relaxed ${EVENT_COLORS[event.type]}`}>
-                    {event.description}
-                  </span>
-                  {event.side && (
-                    <span className={`ml-1.5 text-[9px] font-bold tracking-wider ${
-                      event.side === "prosecution" ? "text-[#c0392b]/50" : "text-[#1a6fa8]/60"
-                    }`}>
-                      [{event.side.toUpperCase()}]
-                    </span>
-                  )}
-                </div>
-                <span className="text-[9px] text-slate-700 shrink-0 mt-0.5">{event.timestamp}</span>
+
+          {/* ── EVIDENCE tab: show full case evidence list ── */}
+          {activeTab === "evidence" ? (
+            caseEvidence.length === 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-[10px] text-slate-700 italic tracking-wider">No case loaded</p>
               </div>
-            ))
+            ) : (
+              caseEvidence.map((item) => {
+                const isAdmitted = admittedNames.has(item.name.toLowerCase()) ||
+                  [...admittedNames].some((d) => d.includes(item.name.toLowerCase()));
+                return (
+                  <div
+                    key={item.id}
+                    className={`rounded px-2.5 py-2 border transition-colors ${
+                      isAdmitted
+                        ? "border-slate-500/40 bg-slate-800/30"
+                        : "border-slate-700/20 bg-transparent"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-[10px]">🗂</span>
+                      <span className={`text-[10px] font-semibold ${isAdmitted ? "text-slate-200" : "text-slate-400"}`}>
+                        {item.name}
+                      </span>
+                      {isAdmitted && (
+                        <span className="text-[8px] font-bold text-green-400/70 tracking-wider ml-auto">✓ ADMITTED</span>
+                      )}
+                    </div>
+                    <p className="text-[9.5px] text-slate-500 leading-relaxed pl-5">{item.description}</p>
+                    <div className="pl-5 mt-1">
+                      <span className={`text-[8px] font-bold tracking-wider border rounded px-1 py-0.5 ${FAVORS_COLOR[item.favorsSide]}`}>
+                        FAVORS {FAVORS_LABEL[item.favorsSide]}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )
+          ) : (
+            /* ── All other tabs: event list ── */
+            filteredEvents.length === 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-[10px] text-slate-700 italic tracking-wider">
+                  {events.length === 0 ? "No events recorded" : "No entries in this category"}
+                </p>
+              </div>
+            ) : (
+              filteredEvents.map((event) => (
+                <div key={event.id} className="flex items-start gap-2">
+                  <span className="text-xs mt-0.5 shrink-0">{EVENT_ICONS[event.type]}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className={`text-[10px] leading-relaxed ${EVENT_COLORS[event.type]}`}>
+                      {event.description}
+                    </span>
+                    {event.side && (
+                      <span className={`ml-1.5 text-[9px] font-bold tracking-wider ${
+                        event.side === "prosecution" ? "text-[#c0392b]/50" : "text-[#1a6fa8]/60"
+                      }`}>
+                        [{event.side.toUpperCase()}]
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[9px] text-slate-700 shrink-0 mt-0.5">{event.timestamp}</span>
+                </div>
+              ))
+            )
           )}
         </div>
       </div>

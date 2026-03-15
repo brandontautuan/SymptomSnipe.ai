@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { Message, AgentStatus } from "@/components/AgentPanel";
 import type { TrialEvent as UITrialEvent } from "@/components/JudgePanel";
+import * as TypingQueue from "@/lib/typingQueue";
 
 // Matches the TrialEvent shape from the orchestrator
 interface StreamEvent {
@@ -104,6 +105,9 @@ export function useTrialStream() {
 
   // Pending tool call waiting for its result — keyed by side
   const pendingToolCall = useRef<Record<string, { msgId: string; tool: string; input: string }>>({});
+
+  // Events buffered while paused — flushed on resume
+  const pendingEventsRef = useRef<StreamEvent[]>([]);
 
   const updateState = useCallback((updater: (prev: TrialState) => TrialState) => {
     setState(updater);
@@ -313,6 +317,17 @@ export function useTrialStream() {
     });
   }, [updateState]);
 
+  // When TypingQueue is resumed, flush any buffered SSE events
+  useEffect(() => {
+    const unsub = TypingQueue.subscribe(() => {
+      if (!TypingQueue.getPaused() && pendingEventsRef.current.length > 0) {
+        const toFlush = pendingEventsRef.current.splice(0);
+        for (const evt of toFlush) handleEvent(evt);
+      }
+    });
+    return unsub;
+  }, [handleEvent]);
+
   const startTrial = useCallback(async (config: TrialConfig, caseName: string) => {
     // Abort any running trial
     abortRef.current?.abort();
@@ -356,7 +371,11 @@ export function useTrialStream() {
           if (line.startsWith("data: ")) {
             try {
               const evt = JSON.parse(line.slice(6)) as StreamEvent;
-              handleEvent(evt);
+              if (TypingQueue.getPaused()) {
+                pendingEventsRef.current.push(evt);
+              } else {
+                handleEvent(evt);
+              }
             } catch {
               // malformed JSON — skip
             }
@@ -372,6 +391,7 @@ export function useTrialStream() {
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
+    pendingEventsRef.current = [];
     setState(INITIAL_STATE);
   }, []);
 

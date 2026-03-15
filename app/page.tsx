@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import TopBar from "@/components/TopBar";
 import ApiKeyConfigModal from "@/components/ApiKeyConfigModal";
 import AgentPanel from "@/components/AgentPanel";
@@ -8,7 +8,7 @@ import JudgePanel from "@/components/JudgePanel";
 import GameOverScreen from "@/components/GameOverScreen";
 import ObjectionBanner, { type BannerWord, type BannerSide } from "@/components/ObjectionBanner";
 import { useTrialStream } from "@/hooks/useTrialStream";
-import { resetQueue } from "@/lib/typingQueue";
+import * as TypingQueue from "@/lib/typingQueue";
 import { CASES, DEMO_CASES } from "@/lib/cases";
 import { DEFAULT_PROSECUTION_MODEL, DEFAULT_DEFENSE_MODEL, DEFAULT_JUDGE_MODEL } from "@/lib/agents/modelList";
 
@@ -33,6 +33,7 @@ export default function Home() {
   const [judgeModel, setJudgeModel]               = useState(DEFAULT_JUDGE_MODEL);
   const maxRounds = 4;
   const [textSpeed, setTextSpeed] = useState(15); // ms per char
+  const currentCase = CASES.find((c) => c.id === selectedCase);
 
   // ── Banner state ──────────────────────────────────────────────
   const [banner, setBanner] = useState<BannerState>({
@@ -42,11 +43,15 @@ export default function Home() {
   });
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Pending banner: detected keyword waiting for its message to start typing
+  const pendingBannerRef = useRef<{ msgId: string; word: BannerWord; side: BannerSide } | null>(null);
+
   // Track last message counts so we only fire on NEW messages
   const prevProsCountRef = useRef(0);
   const prevDefCountRef  = useRef(0);
 
-  function showBanner(word: BannerWord, side: BannerSide) {
+  function fireBanner(word: BannerWord, side: BannerSide) {
+    if (TypingQueue.getPaused()) return;
     if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
     setBanner({ visible: true, word, side });
     bannerTimerRef.current = setTimeout(() => {
@@ -54,19 +59,30 @@ export default function Home() {
     }, 1800);
   }
 
-  // Fire banner whenever a new argument or evidence message appears
+  // Detect OBJECTION / HOLD IT / TAKE THAT in new message text
+  function detectKeyword(text: string): BannerWord | null {
+    if (/^OBJECTION[:\s!]/i.test(text)) return "OBJECTION!";
+    if (/^HOLD IT[:\s!]/i.test(text))   return "HOLD IT!";
+    if (/^TAKE THAT[:\s!]/i.test(text)) return "TAKE THAT!";
+    return null;
+  }
+
+  // When a new message arrives: queue it for prioritization but hold the banner
+  // until that message actually starts typing (so it fires after the prior claim finishes)
   useEffect(() => {
     const newPros = state.prosecutionMessages.length;
     const newDef  = state.defenseMessages.length;
 
     if (newPros > prevProsCountRef.current) {
-      // Check if newest prosecution message is an argument or evidence
       const newest = state.prosecutionMessages[state.prosecutionMessages.length - 1];
-      if (newest) {
-        if (newest.type === "evidence") {
-          showBanner("TAKE THAT!", "evidence");
-        } else if (newest.type === "argument") {
-          showBanner("OBJECTION!", "prosecution");
+      if (newest?.type === "evidence") {
+        // TAKE THAT fires immediately — it's new evidence, not an objection to prior speech
+        fireBanner("TAKE THAT!", "evidence");
+      } else if (newest?.type === "argument") {
+        const kw = detectKeyword(newest.content);
+        if (kw) {
+          TypingQueue.prioritize(newest.id);
+          pendingBannerRef.current = { msgId: newest.id, word: kw, side: "prosecution" };
         }
       }
       prevProsCountRef.current = newPros;
@@ -74,11 +90,13 @@ export default function Home() {
 
     if (newDef > prevDefCountRef.current) {
       const newest = state.defenseMessages[state.defenseMessages.length - 1];
-      if (newest) {
-        if (newest.type === "evidence") {
-          showBanner("TAKE THAT!", "evidence");
-        } else if (newest.type === "argument") {
-          showBanner("HOLD IT!", "defense");
+      if (newest?.type === "evidence") {
+        fireBanner("TAKE THAT!", "evidence");
+      } else if (newest?.type === "argument") {
+        const kw = detectKeyword(newest.content);
+        if (kw) {
+          TypingQueue.prioritize(newest.id);
+          pendingBannerRef.current = { msgId: newest.id, word: kw, side: "defense" };
         }
       }
       prevDefCountRef.current = newDef;
@@ -91,7 +109,8 @@ export default function Home() {
     if (state.status === "idle") {
       prevProsCountRef.current = 0;
       prevDefCountRef.current  = 0;
-      resetQueue();
+      pendingBannerRef.current = null;
+      TypingQueue.resetQueue();
     }
   }, [state.status]);
 
@@ -99,8 +118,43 @@ export default function Home() {
   const isVerdict  = state.status === "verdict";
   const isDone     = isVerdict || state.status === "done" || state.status === "error";
 
+  // ── Wait for verdict text to finish typing before showing game over ──────
+  const activeTypingId = useSyncExternalStore(TypingQueue.subscribe, TypingQueue.getActiveId);
+
+  // Fire pending banner the moment its message becomes the active typewriter
+  useEffect(() => {
+    const pb = pendingBannerRef.current;
+    if (pb && activeTypingId === pb.msgId) {
+      fireBanner(pb.word, pb.side);
+      pendingBannerRef.current = null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTypingId]);
+  const verdictTypingStartedRef = useRef(false);
+  const [verdictTypingDone, setVerdictTypingDone] = useState(false);
+
+  useEffect(() => {
+    if (!isVerdict) {
+      verdictTypingStartedRef.current = false;
+      setVerdictTypingDone(false);
+      return;
+    }
+    if (activeTypingId !== null) {
+      // Queue became active after verdict — track that typing has started
+      verdictTypingStartedRef.current = true;
+    } else if (verdictTypingStartedRef.current) {
+      // Queue went idle after having been active — typing is done
+      setVerdictTypingDone(true);
+    } else if (textSpeed === 0) {
+      // Instant mode: no typing animation, show immediately
+      setVerdictTypingDone(true);
+    }
+  }, [isVerdict, activeTypingId, textSpeed]);
+
+  const showGameOver = isVerdict && !!state.verdict && verdictTypingDone;
+
   const handleBeginTrial = () => {
-    resetQueue();
+    TypingQueue.resetQueue();
     const legalCase = CASES.find((c) => c.id === selectedCase);
     startTrial(
       { caseId: selectedCase, prosecutionModel, defenseModel, judgeModel, maxRounds },
@@ -113,6 +167,20 @@ export default function Home() {
     state.status === "in_progress" ? "in_progress" as const :
     isVerdict                      ? "verdict"     as const :
     state.status === "done"        ? "verdict"     as const : "waiting" as const;
+
+  // ── Pause / resume ───────────────────────────────────────────────────────
+  const isPaused = useSyncExternalStore(TypingQueue.subscribe, TypingQueue.getPaused);
+  const handleTogglePause = () => {
+    if (isPaused) {
+      TypingQueue.resume();
+    } else {
+      TypingQueue.pause();
+      // Dismiss any active or pending banner immediately
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+      setBanner((b) => ({ ...b, visible: false }));
+      pendingBannerRef.current = null;
+    }
+  };
 
   // Flatten transcript for scoring
   const flatTranscript = [
@@ -160,6 +228,8 @@ export default function Home() {
         onJudgeModelChange={setJudgeModel}
         onBeginTrial={handleBeginTrial}
         onReset={reset}
+        isPaused={isPaused}
+        onTogglePause={handleTogglePause}
       />
 
       {/* ── Text speed control ── */}
@@ -194,6 +264,7 @@ export default function Home() {
             model={judgeModel}
             messages={state.judgeMessages}
             events={state.trialEvents}
+            caseEvidence={currentCase?.availableEvidence ?? []}
             round={state.round}
             maxRounds={state.maxRounds}
             verdict={state.verdict}
@@ -218,7 +289,7 @@ export default function Home() {
         onClose={() => setConfigModalOpen(false)}
       />
 
-      {isVerdict && state.verdict && (
+      {showGameOver && (
         <GameOverScreen
           verdict={state.verdict}
           caseName={state.caseName}

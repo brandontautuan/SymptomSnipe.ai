@@ -37,11 +37,13 @@ const SIDE_STYLE: Record<BannerSide, {
   },
 };
 
-const WORD_SUBS: Record<BannerWord, string> = {
-  "OBJECTION!":  "— Prosecution objects —",
-  "HOLD IT!":    "— Defense raises a point —",
-  "TAKE THAT!":  "— Evidence presented —",
-};
+function getSubtitle(word: BannerWord, side: BannerSide): string {
+  if (word === "TAKE THAT!") return "— Evidence presented —";
+  const who = side === "prosecution" ? "Prosecution" : side === "defense" ? "Defense" : "Court";
+  if (word === "OBJECTION!") return `— ${who} objects —`;
+  if (word === "HOLD IT!")   return `— ${who} raises a point —`;
+  return "";
+}
 
 export default function ObjectionBanner({ word, side, visible }: ObjectionBannerProps) {
   const [mounted, setMounted] = useState(false);
@@ -99,7 +101,7 @@ export default function ObjectionBanner({ word, side, visible }: ObjectionBanner
             className={`text-xs font-mono tracking-widest ${style.sub}`}
             style={{ textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}
           >
-            {WORD_SUBS[word]}
+            {getSubtitle(word, side)}
           </span>
         </div>
       </div>

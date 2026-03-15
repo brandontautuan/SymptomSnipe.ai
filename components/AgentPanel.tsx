@@ -8,6 +8,7 @@ import * as TypingQueue from "@/lib/typingQueue";
 // Only ONE message across all panels types at a time.
 function TypewriterText({ id, text, speed }: { id: string; text: string; speed: number }) {
   const activeId = useSyncExternalStore(TypingQueue.subscribe, TypingQueue.getActiveId);
+  const isPaused = useSyncExternalStore(TypingQueue.subscribe, TypingQueue.getPaused);
   const [displayed, setDisplayed] = useState("");
   const enqueuedRef = useRef(false);
 
@@ -30,9 +31,9 @@ function TypewriterText({ id, text, speed }: { id: string; text: string; speed: 
     if (done) setDisplayed(text);
   }, [done, text]);
 
-  // Animate when this message is at the front of the queue
+  // Animate when this message is at the front of the queue and not paused
   useEffect(() => {
-    if (speed === 0 || activeId !== id) return;
+    if (speed === 0 || activeId !== id || isPaused) return;
     let idx = displayed.length;
     const interval = setInterval(() => {
       idx += 1;
@@ -44,7 +45,7 @@ function TypewriterText({ id, text, speed }: { id: string; text: string; speed: 
     }, speed);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, id, speed]);
+  }, [activeId, id, speed, isPaused]);
 
   // Waiting — show cursor placeholder until turn arrives
   if (!done && activeId !== id && displayed.length === 0) {
@@ -54,7 +55,8 @@ function TypewriterText({ id, text, speed }: { id: string; text: string; speed: 
   return (
     <>
       {displayed}
-      {activeId === id && <span className="animate-pulse ml-px">▌</span>}
+      {activeId === id && !isPaused && <span className="animate-pulse ml-px">▌</span>}
+      {activeId === id && isPaused && <span className="opacity-50 ml-px">▌</span>}
     </>
   );
 }
