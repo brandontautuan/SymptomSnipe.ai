@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import TopBar from "@/components/TopBar";
+import ApiKeyConfigModal from "@/components/ApiKeyConfigModal";
 import AgentPanel from "@/components/AgentPanel";
 import JudgePanel from "@/components/JudgePanel";
 import GameOverScreen from "@/components/GameOverScreen";
@@ -20,6 +21,12 @@ export default function Home() {
   const { state, startTrial, reset } = useTrialStream();
 
   const [selectedCase, setSelectedCase]           = useState(DEMO_CASES.easy);
+  const [configModalOpen, setConfigModalOpen]     = useState(false);
+  const [apiKeysOverride, setApiKeysOverride]     = useState<{
+    openRouter?: string;
+    tavily?: string;
+    nebius?: string;
+  }>({});
   const [prosecutionModel, setProsecutionModel]   = useState(DEFAULT_PROSECUTION_MODEL);
   const [defenseModel, setDefenseModel]           = useState(DEFAULT_DEFENSE_MODEL);
   const [judgeModel, setJudgeModel]               = useState(DEFAULT_JUDGE_MODEL);
@@ -133,6 +140,7 @@ export default function Home() {
       <TopBar
         caseName={state.caseName}
         trialStatus={trialStatus}
+        onOpenConfig={() => setConfigModalOpen(true)}
         turn={state.turn}
         round={state.round}
         maxRounds={state.maxRounds}
@@ -185,6 +193,11 @@ export default function Home() {
           />
         </div>
       </div>
+
+      <ApiKeyConfigModal
+        open={configModalOpen}
+        onClose={() => setConfigModalOpen(false)}
+      />
 
       {isVerdict && state.verdict && (
         <GameOverScreen
