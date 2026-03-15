@@ -37,11 +37,16 @@ const SIDE_STYLE: Record<BannerSide, {
   },
 };
 
+function getSpeaker(side: BannerSide): string {
+  if (side === "prosecution") return "PROSECUTION";
+  if (side === "defense")     return "DEFENSE";
+  return "COURT";
+}
+
 function getSubtitle(word: BannerWord, side: BannerSide): string {
-  if (word === "TAKE THAT!") return "— Evidence presented —";
-  const who = side === "prosecution" ? "Prosecution" : side === "defense" ? "Defense" : "Court";
-  if (word === "OBJECTION!") return `— ${who} objects —`;
-  if (word === "HOLD IT!")   return `— ${who} raises a point —`;
+  if (word === "TAKE THAT!") return side === "evidence" ? "— Evidence presented —" : `— ${getSpeaker(side)} presents evidence —`;
+  if (word === "OBJECTION!") return `— ${getSpeaker(side)} objects —`;
+  if (word === "HOLD IT!")   return `— ${getSpeaker(side)} raises a point —`;
   return "";
 }
 
@@ -77,7 +82,24 @@ export default function ObjectionBanner({ word, side, visible }: ObjectionBanner
 
       {/* Banner overlay */}
       <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
-        <div className={`aa-objection-banner flex flex-col items-center gap-1 select-none`}>
+        <div
+          key={`banner-${flashKey}`}
+          className={`aa-objection-banner flex flex-col items-center gap-2 select-none`}
+        >
+          {/* Speaker badge */}
+          {side !== "evidence" && (
+            <span
+              className={`text-[11px] font-black tracking-[0.35em] px-3 py-0.5 rounded border ${
+                side === "prosecution"
+                  ? "text-red-300 border-red-500/50 bg-red-950/60"
+                  : "text-blue-300 border-blue-500/50 bg-blue-950/60"
+              }`}
+              style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
+            >
+              {getSpeaker(side)}
+            </span>
+          )}
+
           {/* Main word */}
           <span
             className={`font-black tracking-tight leading-none ${style.text} ${style.glow}`}
