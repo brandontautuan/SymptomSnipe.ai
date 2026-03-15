@@ -1,5 +1,6 @@
 .reconstruct/
 .env
+.claude/settings.json
 .env.local
 .env.*.local
 node_modules/
