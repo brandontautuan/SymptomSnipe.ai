@@ -7,7 +7,7 @@ import type { EvidenceItem } from "@/lib/cases";
 
 export interface TrialEvent {
   id:          string;
-  type:        "motion_filed" | "evidence_admitted" | "objection" | "ruling" | "turn_change";
+  type:        "motion_filed" | "evidence_admitted" | "objection" | "ruling" | "turn_change" | "judge_direction";
   description: string;
   side?:       "prosecution" | "defense";
   timestamp:   string;
@@ -22,6 +22,7 @@ interface JudgePanelProps {
   round?:        number;
   maxRounds?:    number;
   verdict?:      string;
+  currentAngle?: string;
 }
 
 const EVENT_ICONS: Record<TrialEvent["type"], string> = {
@@ -30,6 +31,7 @@ const EVENT_ICONS: Record<TrialEvent["type"], string> = {
   objection:         "✋",
   ruling:            "⚖",
   turn_change:       "🔄",
+  judge_direction:   "⚖",
 };
 
 const EVENT_COLORS: Record<TrialEvent["type"], string> = {
@@ -38,6 +40,7 @@ const EVENT_COLORS: Record<TrialEvent["type"], string> = {
   objection:         "text-red-300/80",
   ruling:            "text-[#f5c518]/90",
   turn_change:       "text-slate-500",
+  judge_direction:   "text-[#f5c518]/80",
 };
 
 type TabId = "all" | "evidence" | "motions" | "objections";
@@ -50,7 +53,7 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const TAB_FILTER: Record<TabId, TrialEvent["type"][]> = {
-  all:        ["motion_filed", "evidence_admitted", "objection", "ruling", "turn_change"],
+  all:        ["motion_filed", "evidence_admitted", "objection", "ruling", "turn_change", "judge_direction"],
   evidence:   ["evidence_admitted"],
   motions:    ["motion_filed", "ruling"],
   objections: ["objection"],
@@ -76,6 +79,7 @@ export default function JudgePanel({
   round        = 1,
   maxRounds    = 3,
   verdict      = "",
+  currentAngle = "",
 }: JudgePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const filteredEvents = events.filter((e) => TAB_FILTER[activeTab].includes(e.type));
@@ -89,6 +93,14 @@ export default function JudgePanel({
 
   return (
     <div className="flex flex-col h-full gap-2">
+
+      {/* ── Current angle banner ── */}
+      {currentAngle && !verdict && (
+        <div className="shrink-0 px-3 py-1.5 rounded border border-[#c9a227]/25 bg-[#c9a227]/5">
+          <span className="text-[9px] font-bold tracking-wider text-[#c9a227]/70">CURRENT ANGLE</span>
+          <p className="text-[10px] text-slate-300 mt-0.5 leading-relaxed">{currentAngle}</p>
+        </div>
+      )}
 
       {/* ── Verdict banner ── */}
       {verdict && (
@@ -183,7 +195,7 @@ export default function JudgePanel({
             ) : (
               caseEvidence.map((item) => {
                 const isAdmitted = admittedNames.has(item.name.toLowerCase()) ||
-                  [...admittedNames].some((d) => d.includes(item.name.toLowerCase()));
+                  Array.from(admittedNames).some((d) => d.includes(item.name.toLowerCase()));
                 return (
                   <div
                     key={item.id}

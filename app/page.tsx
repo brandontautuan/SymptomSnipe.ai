@@ -169,6 +169,27 @@ export default function Home() {
     isVerdict                      ? "verdict"     as const :
     state.status === "done"        ? "verdict"     as const : "waiting" as const;
 
+  // ── Effective turn: delay turn banner until previous side finishes typing ──
+  // Handles common case only (prosecution→defense, defense→judge). Nested typing overlap
+  // (e.g. judge turn but both prosecution and defense still typing) is out of scope for this capsule.
+  const prosecutionLastArg = state.prosecutionMessages.filter((m) => m.type === "argument").pop();
+  const defenseLastArg = state.defenseMessages.filter((m) => m.type === "argument").pop();
+  const _typingSnapshot = useSyncExternalStore(
+    TypingQueue.subscribe,
+    () =>
+      (state.turn === "defense" && prosecutionLastArg && !TypingQueue.isDone(prosecutionLastArg.id)) ||
+      (state.turn === "judge" && defenseLastArg && !TypingQueue.isDone(defenseLastArg.id)),
+    () =>
+      (state.turn === "defense" && prosecutionLastArg && !TypingQueue.isDone(prosecutionLastArg.id)) ||
+      (state.turn === "judge" && defenseLastArg && !TypingQueue.isDone(defenseLastArg.id))
+  );
+  const effectiveTurn: "prosecution" | "defense" | "judge" | null =
+    state.turn === "defense" && prosecutionLastArg && !TypingQueue.isDone(prosecutionLastArg.id)
+      ? "prosecution"
+      : state.turn === "judge" && defenseLastArg && !TypingQueue.isDone(defenseLastArg.id)
+        ? "defense"
+        : state.turn;
+
   // ── Pause / resume ───────────────────────────────────────────────────────
   const isPaused = useSyncExternalStore(TypingQueue.subscribe, TypingQueue.getPaused, () => false);
   const handleTogglePause = () => {
@@ -214,7 +235,7 @@ export default function Home() {
         caseName={state.caseName}
         trialStatus={trialStatus}
         onOpenConfig={() => setConfigModalOpen(true)}
-        turn={state.turn}
+        turn={effectiveTurn}
         round={state.round}
         maxRounds={state.maxRounds}
         isRunning={isRunning}
@@ -271,6 +292,7 @@ export default function Home() {
             round={state.round}
             maxRounds={state.maxRounds}
             verdict={state.verdict}
+            currentAngle={state.currentAngle}
           />
         </div>
 

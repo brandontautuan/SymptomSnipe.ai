@@ -144,21 +144,26 @@ const STATUS_LABELS: Record<AgentStatus, string> = {
   done:     "✓ DONE",
 };
 
-// Derive GIF state from status + last tool call (for prosecution/defense only)
+// Derive GIF state from status + last message (for prosecution/defense only)
 function deriveGifState(status: AgentStatus, messages: Message[]): GifState {
   if (status === "idle") return "idle";
   if (status === "resting" || status === "done") return "resting";
-  if (status === "speaking") return "speaking";
 
-  // status === "thinking" — check last message for tool type
+  const lastMsg = messages[messages.length - 1];
   const lastToolMsg = [...messages].reverse().find((m) => m.type === "tool_call" && m.toolCall);
-  if (lastToolMsg?.toolCall) {
-    const tool = lastToolMsg.toolCall.tool;
-    if (tool === "file_motion" || tool === "cross_examine") return "objecting";
-    if (tool === "tavily_search" || tool === "lookup_precedent" || tool === "request_evidence") return "researching";
+  const lastTool = lastToolMsg?.toolCall?.tool;
+
+  if (status === "speaking") {
+    if (lastMsg?.type === "motion") return "objecting";
+    if (lastMsg?.type === "argument" && lastMsg.content?.toUpperCase().startsWith("OBJECTION")) return "objecting";
+    return "speaking";
   }
 
-  return "speaking"; // thinking, no tool or other — about to speak
+  // status === "thinking" — never use stale argument from previous turn; only motion/tool signals
+  if (lastMsg?.type === "motion") return "objecting";
+  if (lastTool === "file_motion" || lastTool === "cross_examine") return "objecting";
+  if (lastTool === "tavily_search" || lastTool === "lookup_precedent" || lastTool === "request_evidence") return "researching";
+  return "researching";
 }
 
 interface AgentPanelProps {
@@ -283,14 +288,26 @@ export default function AgentPanel({
   textSpeed = 15,
 }: AgentPanelProps) {
   const cfg = ROLE_CONFIG[role];
-  const gifState = useMemo(() => deriveGifState(status, messages), [status, messages]);
+  const lastMsg = messages[messages.length - 1];
+
+  // Subscribe to TypingQueue so we re-render when typing completes
+  const _typingSnapshot = useSyncExternalStore(
+    TypingQueue.subscribe,
+    () => TypingQueue.isDone(lastMsg?.id ?? "__none__"),
+    () => TypingQueue.isDone(lastMsg?.id ?? "__none__")
+  );
+
+  // Override "done" and "resting" while last message is still typing — show ARGUING until typing completes
+  const stillTyping = lastMsg && !TypingQueue.isDone(lastMsg.id);
+  const effectiveStatus: AgentStatus = (status === "done" || status === "resting") && stillTyping ? "speaking" : status;
+  const gifState = useMemo(() => deriveGifState(effectiveStatus, messages), [effectiveStatus, messages]);
   const showAvatar = role === "prosecution" || role === "defense";
 
   const badgeClass =
-    status === "thinking" ? cfg.badgeThinking :
-    status === "speaking" ? cfg.badgeSpeaking :
-    status === "resting"  ? cfg.badgeResting  :
-    status === "done"     ? cfg.badgeDone     :
+    effectiveStatus === "thinking" ? cfg.badgeThinking :
+    effectiveStatus === "speaking" ? cfg.badgeSpeaking :
+    effectiveStatus === "resting"  ? cfg.badgeResting  :
+    effectiveStatus === "done"     ? cfg.badgeDone     :
     cfg.badgeIdle;
 
   return (
@@ -304,8 +321,8 @@ export default function AgentPanel({
           <span className={`text-xs font-bold tracking-widest ${cfg.nameplateColor}`}>{cfg.label}</span>
         </div>
         <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wider ${badgeClass}`}>
-          {STATUS_LABELS[status]}
-          {status === "thinking" && <span className="cursor-blink ml-0.5">_</span>}
+          {STATUS_LABELS[effectiveStatus]}
+          {effectiveStatus === "thinking" && <span className="cursor-blink ml-0.5">_</span>}
         </span>
       </div>
 

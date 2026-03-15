@@ -8,7 +8,7 @@ import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
 
 import { buildTools, REST_CASE_SIGNAL } from "./tools";
-import { PROSECUTOR_SYSTEM_PROMPT, DEFENDANT_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT } from "./prompts";
+import { PROSECUTOR_SYSTEM_PROMPT, DEFENDANT_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT, JUDGE_DIRECTION_PROMPT } from "./prompts";
 import { createModel } from "./models";
 import { formatCaseBriefing } from "../evidence";
 import { getCaseById } from "../cases";
@@ -19,6 +19,7 @@ export interface TrialConfig {
   defenseModel: string;
   judgeModel: string;
   maxRounds?: number;
+  maxExchanges?: number; // cap on prosecution-defense exchanges before verdict
   ragMode?: boolean;
   onEvent?: (event: TrialEvent) => void;
 }
@@ -33,6 +34,7 @@ export interface TrialEvent {
     | "argument"
     | "motion"
     | "evidence"
+    | "judge_direction"
     | "verdict"
     | "error";
   side?: "prosecution" | "defense" | "judge";
@@ -55,6 +57,18 @@ export interface TrialResult {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/** Parse Judge direction JSON. Returns { action, direction } or fallback to continue. */
+function parseJudgeDirection(text: string): { action: "verdict" | "continue"; direction: string } {
+  try {
+    const json = JSON.parse(text.trim()) as { action?: string; direction?: string };
+    const action = json.action === "verdict" ? "verdict" : "continue";
+    const direction = typeof json.direction === "string" ? json.direction : "";
+    return { action, direction };
+  } catch {
+    return { action: "continue", direction: "Prosecution, proceed with your next argument." };
+  }
 }
 
 /**
@@ -119,6 +133,8 @@ function parseAgentMessages(
         rested = true;
         summary = output.replace(`${REST_CASE_SIGNAL}:`, "").trim();
         events.push({ type: "turn_end", side, round, content: summary, timestamp: now() });
+        console.warn("rest_case encountered early — truncating agent messages");
+        break;
       } else {
         const lower = output.toLowerCase();
         const type: TrialEvent["type"] = lower.includes("motion filed")
@@ -153,6 +169,7 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
     defenseModel,
     judgeModel,
     maxRounds = 3,
+    maxExchanges = 5,
     ragMode = false,
     onEvent = () => {},
   } = config;
@@ -216,25 +233,31 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
     new SystemMessage(`CASE BRIEFING:\n${briefing}`),
   ];
 
-  const prosecutionFullArgs: string[] = []; // full argument text passed to defense each round
-  const defenseFullArgs: string[] = [];      // full argument text passed to prosecution each round
+  const prosecutionFullArgs: string[] = [];
+  const defenseFullArgs: string[] = [];
+  let currentAngle = "";
 
-  // ── Turn-taking loop ─────────────────────────────────────────────────────
-  for (let round = 1; round <= maxRounds; round++) {
+  // ── Evidence-exchange loop (Prosecution → Defense → Judge direction) ──────
+  for (let exchange = 1; exchange <= maxExchanges; exchange++) {
+    const round = exchange;
+
     // ── Prosecution turn ──
     emit({ type: "turn_start", side: "prosecution", round, content: `Prosecution begins round ${round}` });
 
     const lastDefenseArg = defenseFullArgs[defenseFullArgs.length - 1] ?? "";
     const pInput =
-      round === 1
-        ? `Round ${round} of ${maxRounds}. The judge has opened the trial. Prosecution — present your first argument. Reference specific evidence from the case record.`
-        : `Round ${round} of ${maxRounds}. Defense just argued:\n\n"${lastDefenseArg}"\n\nProsecution — counter that argument directly, then press your case.`;
+      exchange === 1
+        ? `Round ${round} of ${maxExchanges}. The judge has opened the trial. Prosecution — present your first piece of evidence (use request_evidence) and your argument. Reference specific evidence from the case record.`
+        : currentAngle
+        ? `Round ${round} of ${maxExchanges}. The court directs: ${currentAngle}\n\nDefense just argued:\n\n"${lastDefenseArg}"\n\nProsecution — address the court's direction, then counter the defense.`
+        : `Round ${round} of ${maxExchanges}. Defense just argued:\n\n"${lastDefenseArg}"\n\nProsecution — counter that argument directly, then press your case.`;
 
     let prosecutionResult;
     try {
-      prosecutionResult = await prosecutionAgent.invoke({
-        messages: [...sharedHistory, new HumanMessage(pInput)],
-      });
+      prosecutionResult = await prosecutionAgent.invoke(
+        { messages: [...sharedHistory, new HumanMessage(pInput)] },
+        { recursionLimit: 12 }
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       emit({ type: "error", side: "prosecution", round, content: msg });
@@ -252,13 +275,18 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
     // ── Defense turn ──
     emit({ type: "turn_start", side: "defense", round, content: `Defense begins round ${round}` });
 
-    const dInput = `Round ${round} of ${maxRounds}. Prosecution just argued:\n\n"${pFullArg}"\n\nDefense — respond directly to that argument. Challenge it specifically, then make your own point.`;
+    const prosecutionArgForDefense = pFullArg.trim() || "Prosecution has presented evidence. Present your defense.";
+    const dInput =
+      exchange === 1
+        ? `Round ${round} of ${maxExchanges}. Prosecution just argued:\n\n"${prosecutionArgForDefense}"\n\nDefense — object to prosecution's evidence or present counter-evidence. Challenge it specifically, then make your own point. Respond now.`
+        : `Round ${round} of ${maxExchanges}. Prosecution just argued:\n\n"${prosecutionArgForDefense}"\n\nDefense — respond directly. Object or present counter-evidence. Challenge it specifically, then make your own point. Respond now.`;
 
     let defenseResult;
     try {
-      defenseResult = await defenseAgent.invoke({
-        messages: [...sharedHistory, new HumanMessage(dInput)],
-      });
+      defenseResult = await defenseAgent.invoke(
+        { messages: [...sharedHistory, new HumanMessage(dInput)] },
+        { recursionLimit: 12 }
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       emit({ type: "error", side: "defense", round, content: msg });
@@ -268,10 +296,48 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
     const dNewMessages: BaseMessage[] = (defenseResult.messages ?? []).slice(sharedHistory.length + 1);
     const { events: dEvents, summary: dSummary } = parseAgentMessages(dNewMessages, "defense", round);
 
+    const dArgEvents = dEvents.filter((e) => e.type === "argument");
+    if (dArgEvents.length === 0) {
+      console.warn("Defense produced no argument — dNewMessages.length:", dNewMessages.length, "dEvents:", dEvents.length);
+    }
+
     for (const e of dEvents) { transcript.push(e); onEvent(e); }
-    const dFullArg = dEvents.filter(e => e.type === "argument").map(e => e.content).join(" ").trim() || dSummary;
+    if (dArgEvents.length === 0) {
+      const fallbackContent = "Defense is reviewing the evidence. No argument at this time.";
+      emit({ type: "argument", side: "defense", round, content: fallbackContent });
+    }
+    const dFullArg =
+      dArgEvents.length > 0
+        ? dArgEvents.map((e) => e.content).join(" ").trim() || dSummary
+        : "Defense is reviewing the evidence. No argument at this time.";
     defenseFullArgs.push(dFullArg);
     sharedHistory.push(new AIMessage(dFullArg));
+
+    // ── Judge direction: verdict or continue to next angle ───────────────────
+    emit({ type: "turn_start", side: "judge", round: 0, content: "Judge considering next step..." });
+
+    const judgeDirLLM = createModel(judgeModel, { temperature: 0.2 });
+    const exchangeSummary = `Prosecution argued: ${pFullArg.slice(0, 300)}...\n\nDefense argued: ${dFullArg.slice(0, 300)}...`;
+    let judgeDirText = "";
+    try {
+      const judgeDirResponse = await judgeDirLLM.invoke([
+        new SystemMessage(JUDGE_DIRECTION_PROMPT),
+        new HumanMessage(
+          `Exchange ${exchange} of ${maxExchanges} complete.\n\n${exchangeSummary}\n\n` +
+            `Respond with JSON only: {"action":"verdict"|"continue","direction":"..."}`
+        ),
+      ]);
+      judgeDirText = typeof judgeDirResponse.content === "string" ? judgeDirResponse.content.trim() : "";
+    } catch { /* fallback below */ }
+
+    const { action, direction } = parseJudgeDirection(judgeDirText || "{}");
+
+    if (action === "verdict" || exchange >= maxExchanges) {
+      emit({ type: "judge_direction", side: "judge", round: 0, content: "Court will now render verdict." });
+      break;
+    }
+    currentAngle = direction;
+    emit({ type: "judge_direction", side: "judge", round: 0, content: direction || "Prosecution, proceed." });
   }
 
   // ── Judge verdict ────────────────────────────────────────────────────────
@@ -300,5 +366,5 @@ export async function runTrial(config: TrialConfig): Promise<TrialResult> {
 
   emit({ type: "verdict", side: "judge", round: 0, content: verdict });
 
-  return { caseId, transcript, verdict, rounds: maxRounds, prosecutionModel, defenseModel, judgeModel };
+  return { caseId, transcript, verdict, rounds: maxExchanges, prosecutionModel, defenseModel, judgeModel };
 }

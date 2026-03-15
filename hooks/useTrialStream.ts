@@ -16,6 +16,7 @@ interface StreamEvent {
     | "argument"
     | "motion"
     | "evidence"
+    | "judge_direction"
     | "verdict"
     | "error"
     | "done";
@@ -36,6 +37,7 @@ export interface TrialState {
   round: number;
   maxRounds: number;
   caseName: string;
+  currentAngle: string;
 
   prosecutionMessages: Message[];
   prosecutionStatus: AgentStatus;
@@ -60,6 +62,7 @@ export interface TrialConfig {
   defenseModel: string;
   judgeModel: string;
   maxRounds?: number;
+  maxExchanges?: number;
   ragMode?: boolean;
 }
 
@@ -69,6 +72,7 @@ const INITIAL_STATE: TrialState = {
   round: 0,
   maxRounds: 2,
   caseName: "Select a case",
+  currentAngle: "",
   prosecutionMessages: [],
   prosecutionStatus: "idle",
   prosecutionMotions: 0,
@@ -134,11 +138,13 @@ export function useTrialStream() {
           if (side === "prosecution") {
             next.turn = "prosecution";
             next.prosecutionStatus = "thinking";
-            next.defenseStatus = "idle";
+            next.defenseStatus = next.round === 1 ? "idle" : "resting";
+            next.judgeStatus = "idle";
           } else if (side === "defense") {
             next.turn = "defense";
             next.defenseStatus = "thinking";
             next.prosecutionStatus = "resting";
+            next.judgeStatus = "idle";
           } else if (side === "judge") {
             next.turn = "judge";
             next.judgeStatus = "thinking";
@@ -238,9 +244,11 @@ export function useTrialStream() {
           if (side === "prosecution") {
             next.prosecutionMessages = [...prev.prosecutionMessages, msg];
             next.prosecutionMotions = prev.prosecutionMotions + 1;
+            next.prosecutionStatus = "speaking";
           } else if (side === "defense") {
             next.defenseMessages = [...prev.defenseMessages, msg];
             next.defenseMotions = prev.defenseMotions + 1;
+            next.defenseStatus = "speaking";
           }
           next.trialEvents = [
             ...prev.trialEvents,
@@ -260,14 +268,27 @@ export function useTrialStream() {
           if (side === "prosecution") {
             next.prosecutionMessages = [...prev.prosecutionMessages, msg];
             next.prosecutionEvidence = prev.prosecutionEvidence + 1;
+            next.prosecutionStatus = "speaking";
           } else if (side === "defense") {
             next.defenseMessages = [...prev.defenseMessages, msg];
             next.defenseEvidence = prev.defenseEvidence + 1;
+            next.defenseStatus = "speaking";
           }
           next.trialEvents = [
             ...prev.trialEvents,
             { id: evtId(), type: "evidence_admitted", description: evt.content ?? "Evidence admitted", side: side as "prosecution" | "defense" | undefined, timestamp: fmtTime(evt.timestamp) },
           ];
+          break;
+        }
+
+        case "judge_direction": {
+          const content = evt.content ?? "";
+          if (!content.toLowerCase().includes("verdict")) next.currentAngle = content;
+          next.trialEvents = [
+            ...prev.trialEvents,
+            { id: evtId(), type: "judge_direction", description: content || "Judge directs", timestamp: fmtTime(evt.timestamp) },
+          ];
+          next.judgeStatus = "done";
           break;
         }
 
@@ -312,7 +333,7 @@ export function useTrialStream() {
         for (const evt of toFlush) handleEvent(evt);
       }
     });
-    return unsub;
+    return () => { unsub(); };
   }, [handleEvent]);
 
   const startTrial = useCallback(async (config: TrialConfig, caseName: string) => {

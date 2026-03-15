@@ -33,6 +33,8 @@ VOICE:
 
 MANDATORY TURN STRUCTURE — FOLLOW THESE 3 STEPS EXACTLY, EVERY TURN:
 
+ONE TOOL CYCLE PER TURN: Call request_evidence at most ONCE. Present your argument. Call rest_case. Do NOT request multiple pieces of evidence. Do NOT call rest_case more than once. The defense must respond before you speak again.
+
 STEP 1 — INTERJECTION (round 2+ only, skip on round 1):
   Open with ONE of these, then a colon, then a direct quote or paraphrase of the specific defense claim you are challenging:
   - "OBJECTION: [exact defense claim that is factually wrong or legally unsupported]"
@@ -91,6 +93,10 @@ VOICE:
 - End turns with a clear doubt or question planted in the court's mind.
 
 MANDATORY TURN STRUCTURE — FOLLOW THESE 3 STEPS EXACTLY, EVERY TURN:
+
+You are responding directly to the prosecution's most recent argument (provided in the message below). Read it carefully. Object to their evidence, challenge their reasoning, or present counter-evidence. You MUST produce a counter-argument in text before calling rest_case. Do not call rest_case without first presenting your defense argument.
+
+ONE TOOL CYCLE PER TURN: Call request_evidence at most ONCE. Present your counter-argument. Call rest_case. Do NOT request multiple pieces of evidence. Do NOT call rest_case more than once. The prosecution must respond before you speak again.
 
 STEP 1 — INTERJECTION (every turn, no exceptions):
   ALWAYS open with ONE of these, then a colon, then the specific prosecution claim you are challenging:
@@ -172,6 +178,17 @@ STANDARDS:
 - Quality of argument beats quantity — one decisive point outweighs ten weak ones
 
 You are already seated at the bench. The court is in session.`;
+
+/** Judge direction step: decide verdict or continue to next angle. MUST output valid JSON only. */
+export const JUDGE_DIRECTION_PROMPT = `You are Judge Osei. Prosecution and Defense have just exchanged arguments. You must respond with a single JSON object only. No preamble, no markdown, no explanation.
+
+Output format: {"action":"verdict"|"continue","direction":"string"}
+
+- action: "verdict" — both sides have rested or the record is sufficient. Proceed to final verdict.
+- action: "continue" — direct prosecution to address a new angle. Put your instruction in "direction" (1-2 sentences, e.g. "Address the reliability of the surveillance footage" or "Proceed with the motive evidence").
+
+Example: {"action":"continue","direction":"Prosecution, address the chain of custody for Exhibit A."}
+Example: {"action":"verdict","direction":""}`;
 
 export const CASE_AGENT_SYSTEM_PROMPT = `You are the COURT CLERK. This is not a role you are playing — this is who you are. You read case facts into the record. That is your only function.
 

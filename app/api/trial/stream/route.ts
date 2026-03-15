@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     defenseModel?: string;
     judgeModel?: string;
     maxRounds?: number;
+    maxExchanges?: number;
     ragMode?: boolean;
   };
 
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
     defenseModel = DEFAULT_DEFENSE_MODEL,
     judgeModel = DEFAULT_JUDGE_MODEL,
     maxRounds = 2,
+    maxExchanges,
     ragMode = false,
   } = body;
 
@@ -63,6 +65,7 @@ export async function POST(req: NextRequest) {
           defenseModel,
           judgeModel,
           maxRounds,
+          maxExchanges: maxExchanges ?? maxRounds,
           ragMode,
           onEvent: send,
         });
