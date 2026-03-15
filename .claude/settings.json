@@ -1,0 +1,35 @@
+{
+  "mcpServers": {
+    "tavily": {
+      "command": "npx",
+      "args": ["-y", "tavily-mcp@0.1.4"],
+      "env": {
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+      }
+    },
+    "github": {
+      "type": "sse",
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "env": {}
+    },
+    "reconstruct": {
+      "type": "http",
+      "url": "YOUR_RECONSTRUCT_URL_HERE",
+      "headers": {
+        "Authorization": "Bearer YOUR_RECONSTRUCT_API_KEY_HERE"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/mathewrolf/Desktop/SymptomSnipe.ai/SymptomSnipe.ai"
+      ]
+    }
+  }
+}
