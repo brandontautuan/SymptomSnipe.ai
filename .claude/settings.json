@@ -18,9 +18,9 @@
     },
     "reconstruct": {
       "type": "http",
-      "url": "YOUR_RECONSTRUCT_URL_HERE",
+      "url": "https://reconstructmcp-production.up.railway.app/",
       "headers": {
-        "Authorization": "Bearer YOUR_RECONSTRUCT_API_KEY_HERE"
+        "Authorization": "Bearer ${RECONSTRUCT_API_KEY}"
       }
     },
     "filesystem": {
