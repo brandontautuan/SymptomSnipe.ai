@@ -69,11 +69,25 @@ function parseAgentMessages(
   let summary = "";
   let rested = false;
 
+  // Accumulate all AI text across reasoning iterations into ONE argument.
+  // This ensures prosecution (or defense) produces exactly one argument card per turn,
+  // no matter how many tool-call loops the agent runs internally.
+  const argumentParts: string[] = [];
+
+  const flushArgument = () => {
+    if (argumentParts.length === 0) return;
+    const combined = argumentParts.join(" ").trim();
+    argumentParts.length = 0;
+    if (combined) {
+      events.push({ type: "argument", side, round, content: combined, timestamp: now() });
+    }
+  };
+
   for (const msg of messages) {
     if (msg._getType() === "ai") {
       const aiMsg = msg as AIMessage;
 
-      // Check for tool calls in the message
+      // Tool calls — emit each as a tool_call event (useful for UI display)
       const toolCalls = aiMsg.tool_calls ?? [];
       for (const tc of toolCalls) {
         const inputStr = JSON.stringify(tc.args ?? {});
@@ -88,19 +102,20 @@ function parseAgentMessages(
         });
       }
 
-      // Text content from the AI — strip any leading role labels the agent may have echoed
+      // Collect AI text — strip echoed role labels, then accumulate
       const rawText = typeof aiMsg.content === "string" ? aiMsg.content : "";
       const text = rawText
         .replace(/^\s*\[?(PROSECUTION|DEFENSE|JUDGE|CALLOWAY|VALE|OSEI)\]?\s*ROUND\s*\d+[:\]]\s*/i, "")
         .replace(/^\s*(PROSECUTION|DEFENSE|JUDGE|CALLOWAY|VALE|OSEI)\s*[:—]\s*/i, "")
         .trim();
-      if (text) {
-        events.push({ type: "argument", side, round, content: text, timestamp: now() });
-      }
+      if (text) argumentParts.push(text);
+
     } else if (msg._getType() === "tool") {
       const output = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
 
       if (output.startsWith(REST_CASE_SIGNAL)) {
+        // Flush accumulated text as ONE argument before closing the turn
+        flushArgument();
         rested = true;
         summary = output.replace(`${REST_CASE_SIGNAL}:`, "").trim();
         events.push({ type: "turn_end", side, round, content: summary, timestamp: now() });
@@ -116,10 +131,12 @@ function parseAgentMessages(
     }
   }
 
+  // Flush any remaining text (agent didn't call rest_case)
+  flushArgument();
+
   if (!rested && !summary) {
-    // Extract last AI text as summary
     const lastArg = [...events].reverse().find((e) => e.type === "argument");
-    summary = lastArg?.content?.slice(0, 300) ?? `${side} rests`;
+    summary = lastArg?.content ?? `${side} rests`;
     events.push({ type: "turn_end", side, round, content: summary, timestamp: now() });
   }
 
