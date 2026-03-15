@@ -34,7 +34,7 @@ Based on [CLAUDE.md](./CLAUDE.md). Check off items as they're completed.
 - [x] **Model switcher** — Swap Nebius models per role (TopBar)
 - [x] **Benchmark UI** — BenchmarkBar with Artificial Analysis-style stats per role
 - [x] **Evidence & motions log** — Updated live in JudgePanel and AgentPanel
-- [ ] **API key config screen** — Input for OpenRouter + Tavily (keys in .env.local for now)
+- [x] **API key config screen** — Gear icon modal: status display, Test Connection per key, instructions & links (OpenRouter, Tavily, Nebius)
 - [x] **Game over / results screen** — Verdict, both arguments, motions, final score (GameOverScreen)
 
 ---
@@ -52,4 +52,4 @@ Based on [CLAUDE.md](./CLAUDE.md). Check off items as they're completed.
 
 - **LLM**: Uses OpenRouter (orchestrator) / Nebius fallback
 - **RAG**: Optional; `lookup_precedent` has keyword stubs; FAISS adds real precedent citations
-- **API keys**: Stored in .env.local; no in-app config screen yet
+- **API keys**: Stored in .env.local; in-app config screen (gear icon) shows status and Test Connection per key
