@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  return NextResponse.json({ status: "ok", service: "SymptomSnipe.ai" });
+  return NextResponse.json({ status: "ok", service: "CaseSnipe.ai" });
 }

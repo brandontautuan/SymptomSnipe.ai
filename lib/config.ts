@@ -1,5 +1,5 @@
 /**
- * SymptomSnipe.ai - Environment configuration
+ * CaseSnipe.ai - Environment configuration
  * Validates required API keys at runtime. Do not commit .env.local.
  */
 

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SymptomSnipe.ai",
-  description: "Multi-agent medical diagnosis game",
+  title: "CaseSnipe.ai",
+  description: "Multi-agent courtroom simulation — Prosecutor, Defendant, and Judge agents",
 };
 
 export default function RootLayout({
