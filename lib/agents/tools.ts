@@ -28,17 +28,19 @@ export function buildTools(caseId: string, ragMode = false) {
     func: async ({ query }) => {
       // Tavily is called via the backend. If TAVILY_API_KEY is set, use real search.
       // Falls back to a mock response so the agent loop works without keys.
-      const apiKey = process.env.TAVILY_API_KEY;
+      const apiKey = process.env.TAVILY_API_KEY?.trim();
       if (!apiKey) {
-        return `[MOCK — no Tavily key] Search results for "${query}": This would return relevant legal statutes, case law, and background. Configure TAVILY_API_KEY for live results.`;
+        return `[MOCK — no Tavily key] Search results for "${query}": This would return relevant legal statutes, case law, and background. Configure TAVILY_API_KEY in .env.local and restart the dev server.`;
       }
 
       try {
         const res = await fetch("https://api.tavily.com/search", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
           body: JSON.stringify({
-            api_key: apiKey,
             query,
             search_depth: "basic",
             max_results: 3,

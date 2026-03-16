@@ -103,11 +103,9 @@ function SideCard({
 
       {/* Breakdown */}
       <div className="flex flex-col gap-2">
-        <ScoreBar label="Arguments"  value={score.breakdown.arguments}  max={30} color={barColor} />
-        <ScoreBar label="Evidence"   value={score.breakdown.evidence}   max={20} color={barColor} />
-        <ScoreBar label="Precedents" value={score.breakdown.precedents} max={20} color={barColor} />
-        <ScoreBar label="Motions"    value={score.breakdown.motions}    max={15} color={barColor} />
-        <ScoreBar label="Efficiency" value={score.breakdown.efficiency} max={15} color={barColor} />
+        <ScoreBar label="Arguments"  value={score.breakdown.arguments}  max={45} color={barColor} />
+        <ScoreBar label="Evidence"   value={score.breakdown.evidence}   max={30} color={barColor} />
+        <ScoreBar label="Efficiency" value={score.breakdown.efficiency} max={25} color={barColor} />
       </div>
 
       {/* Summary */}

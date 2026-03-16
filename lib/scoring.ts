@@ -2,7 +2,7 @@
  * CaseSnipe.ai — Scoring Engine
  * Scores Prosecutor and Defendant based on transcript quality.
  *
- * Rewards: precedents cited, evidence obtained, motions filed, argument depth
+ * Rewards: argument depth, evidence obtained, efficiency
  * Penalizes: repeated tool calls, zero arguments, no evidence used
  */
 
@@ -16,11 +16,9 @@ interface TrialEvent {
 export interface SideScore {
   total: number;          // 0–100
   breakdown: {
-    arguments: number;    // 0–30
-    evidence: number;     // 0–20
-    precedents: number;   // 0–20
-    motions: number;      // 0–15
-    efficiency: number;   // 0–15
+    arguments: number;    // 0–45
+    evidence: number;    // 0–30
+    efficiency: number;  // 0–25
   };
   grade: "S" | "A" | "B" | "C" | "D";
   summary: string;
@@ -47,47 +45,33 @@ function scoreSide(events: TrialEvent[], side: string): SideScore {
   // Arguments — reward depth (longer = more substantive, up to a point)
   const args = mine.filter((e) => e.type === "argument");
   const argChars = args.reduce((sum, e) => sum + (e.content?.length ?? 0), 0);
-  const argScore = Math.min(30, Math.round((argChars / 800) * 30));
+  const argScore = Math.min(45, Math.round((argChars / 800) * 45));
 
   // Evidence — reward variety, penalize none
   const evidenceItems = mine.filter((e) => e.type === "evidence");
-  const evidenceScore = Math.min(20, evidenceItems.length * 8);
-
-  // Precedents — reward lookup_precedent tool calls with outputs
-  const precedentCalls = mine.filter(
-    (e) => e.type === "tool_call" && e.toolName === "lookup_precedent"
-  );
-  const precedentScore = Math.min(20, precedentCalls.length * 10);
-
-  // Motions — reward filing relevant motions
-  const motions = mine.filter((e) => e.type === "motion");
-  const motionScore = Math.min(15, motions.length * 8);
+  const evidenceScore = Math.min(30, evidenceItems.length * 10);
 
   // Efficiency — penalize excessive tool calls without substance
   const totalToolCalls = mine.filter((e) => e.type === "tool_call").length;
   const efficiencyScore =
-    totalToolCalls === 0 && args.length > 0 ? 10 :
-    totalToolCalls <= 6 ? 15 :
-    totalToolCalls <= 10 ? 10 :
+    totalToolCalls === 0 && args.length > 0 ? 25 :
+    totalToolCalls <= 6 ? 25 :
+    totalToolCalls <= 10 ? 15 :
     5;
 
-  const total = Math.min(100, argScore + evidenceScore + precedentScore + motionScore + efficiencyScore);
+  const total = Math.min(100, argScore + evidenceScore + efficiencyScore);
 
   const summaryParts: string[] = [];
   if (args.length === 0) summaryParts.push("No arguments made");
-  else if (argScore >= 20) summaryParts.push("Strong argumentation");
+  else if (argScore >= 30) summaryParts.push("Strong argumentation");
   else summaryParts.push("Minimal arguments");
-  if (precedentCalls.length > 0) summaryParts.push(`${precedentCalls.length} precedent(s) cited`);
   if (evidenceItems.length > 0) summaryParts.push(`${evidenceItems.length} evidence item(s) used`);
-  if (motions.length > 0) summaryParts.push(`${motions.length} motion(s) filed`);
 
   return {
     total,
     breakdown: {
       arguments: argScore,
       evidence: evidenceScore,
-      precedents: precedentScore,
-      motions: motionScore,
       efficiency: efficiencyScore,
     },
     grade: grade(total),
